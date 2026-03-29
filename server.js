@@ -1,158 +1,92 @@
-require("dotenv").config();
-
 const express = require("express");
 const path = require("path");
 const { Pool } = require("pg");
-const bcrypt = require("bcrypt");
-const session = require("express-session");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// ================= DATABASE CONNECTION =================
-
-// ✅ Works for BOTH local + Render
+// 🔥 PostgreSQL connection (Render ready)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL
-    ? { rejectUnauthorized: false } // for Render
-    : false, // for local
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
-// Test DB connection
+// ✅ Create table automatically
+async function createTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        amount INT NOT NULL
+      );
+    `);
+    console.log("✅ Table ready");
+  } catch (err) {
+    console.error("❌ Table error:", err);
+  }
+}
+createTable();
+
+// ✅ Test DB
 pool.connect()
   .then(() => console.log("✅ PostgreSQL Connected"))
-  .catch(err => console.error("❌ DB Connection Error:", err));
+  .catch(err => console.error("❌ DB Error:", err));
 
-// ================= MIDDLEWARE =================
+// 👉 Serve frontend
+app.use(express.static(path.join(__dirname, "public")));
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static("public"));
+// ================= ROUTES =================
 
-app.use(
-  session({
-    secret: "secret123",
-    resave: false,
-    saveUninitialized: false,
-  })
-);
-
-app.set("view engine", "ejs");
-
-// ================= AUTH =================
-
-// Register page
-app.get("/register", (req, res) => {
-  res.render("register");
-});
-
-// Register
-app.post("/register", async (req, res) => {
-  const { email, password } = req.body;
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  await pool.query(
-    "INSERT INTO users (email, password) VALUES ($1, $2)",
-    [email, hashedPassword]
-  );
-
-  res.redirect("/login");
-});
-
-// Login page
-app.get("/login", (req, res) => {
-  res.render("login");
-});
-
-// Login
-app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-
-  const result = await pool.query(
-    "SELECT * FROM users WHERE email=$1",
-    [email]
-  );
-
-  if (result.rows.length === 0) {
-    return res.send("User not found");
+// 👉 Get all expenses
+app.get("/api/expenses", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM expenses ORDER BY id DESC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch expenses" });
   }
+});
 
-  const user = result.rows[0];
+// 👉 Add expense
+app.post("/api/expenses", async (req, res) => {
+  try {
+    const { title, amount } = req.body;
 
-  const match = await bcrypt.compare(password, user.password);
+    const result = await pool.query(
+      "INSERT INTO expenses (title, amount) VALUES ($1, $2) RETURNING *",
+      [title, amount]
+    );
 
-  if (!match) {
-    return res.send("Wrong password");
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add expense" });
   }
-
-  req.session.userId = user.id;
-
-  res.redirect("/");
 });
 
-// Logout
-app.get("/logout", (req, res) => {
-  req.session.destroy();
-  res.redirect("/login");
+// 👉 Delete expense
+app.delete("/api/expenses/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM expenses WHERE id=$1", [req.params.id]);
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Delete failed" });
+  }
 });
 
-// ================= DASHBOARD =================
-
-app.get("/", async (req, res) => {
-  if (!req.session.userId) return res.redirect("/login");
-
-  const result = await pool.query(
-    "SELECT * FROM expenses WHERE user_id=$1 ORDER BY created_at DESC",
-    [req.session.userId]
-  );
-
-  res.render("dashboard", { expenses: result.rows });
+// 👉 Fallback route
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/index.html"));
 });
 
-// Add expense
-app.post("/add", async (req, res) => {
-  const { title, amount, category } = req.body;
-
-  await pool.query(
-    "INSERT INTO expenses (title, amount, category, user_id) VALUES ($1, $2, $3, $4)",
-    [title, amount, category, req.session.userId]
-  );
-
-  res.redirect("/");
-});
-
-// ================= EDIT =================
-
-app.get("/edit/:id", async (req, res) => {
-  const result = await pool.query(
-    "SELECT * FROM expenses WHERE id=$1",
-    [req.params.id]
-  );
-
-  res.render("edit", { expense: result.rows[0] });
-});
-
-app.post("/edit/:id", async (req, res) => {
-  const { title, amount, category } = req.body;
-
-  await pool.query(
-    "UPDATE expenses SET title=$1, amount=$2, category=$3 WHERE id=$4",
-    [title, amount, category, req.params.id]
-  );
-
-  res.redirect("/");
-});
-
-// ================= DELETE =================
-
-app.get("/delete/:id", async (req, res) => {
-  await pool.query("DELETE FROM expenses WHERE id=$1", [req.params.id]);
-  res.redirect("/");
-});
-
-// ================= START =================
-
+// 🔥 PORT FIX FOR RENDER
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
