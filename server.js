@@ -4,11 +4,15 @@ const { Pool } = require("pg");
 
 const app = express();
 
-// Middleware
+// ✅ Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ PostgreSQL connection (Render)
+// ✅ EJS Setup (IMPORTANT)
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
+// ✅ PostgreSQL Connection (Render)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -16,12 +20,12 @@ const pool = new Pool({
   },
 });
 
-// ✅ Connect DB
+// ✅ DB Connect
 pool.connect()
   .then(() => console.log("✅ PostgreSQL Connected"))
   .catch(err => console.error("❌ DB Error:", err));
 
-// ✅ Create table automatically
+// ✅ Create Table Automatically
 (async () => {
   try {
     await pool.query(`
@@ -33,16 +37,37 @@ pool.connect()
     `);
     console.log("✅ Table ready");
   } catch (err) {
-    console.error("❌ Table creation error:", err);
+    console.error("❌ Table error:", err);
   }
 })();
 
-// ✅ Serve frontend
-app.use(express.static(path.join(__dirname, "public")));
 
 // ================= ROUTES =================
 
-// 👉 Get all expenses
+// 👉 Home
+app.get("/", (req, res) => {
+  res.redirect("/login");
+});
+
+// 👉 Login Page
+app.get("/login", (req, res) => {
+  res.render("login");
+});
+
+// 👉 Register Page
+app.get("/register", (req, res) => {
+  res.render("register");
+});
+
+// 👉 Dashboard Page
+app.get("/dashboard", (req, res) => {
+  res.render("dashboard");
+});
+
+
+// ================= API =================
+
+// 👉 Get Expenses
 app.get("/api/expenses", async (req, res) => {
   try {
     const result = await pool.query(
@@ -55,7 +80,7 @@ app.get("/api/expenses", async (req, res) => {
   }
 });
 
-// 👉 Add expense
+// 👉 Add Expense
 app.post("/api/expenses", async (req, res) => {
   try {
     const { title, amount } = req.body;
@@ -76,11 +101,11 @@ app.post("/api/expenses", async (req, res) => {
   }
 });
 
-// 👉 Delete expense
+// 👉 Delete Expense
 app.delete("/api/expenses/:id", async (req, res) => {
   try {
     await pool.query(
-      "DELETE FROM expenses WHERE id = $1",
+      "DELETE FROM expenses WHERE id=$1",
       [req.params.id]
     );
     res.json({ message: "Deleted" });
@@ -90,12 +115,8 @@ app.delete("/api/expenses/:id", async (req, res) => {
   }
 });
 
-// ✅ FIXED fallback route (NO CRASH)
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, "public/index.html"));
-});
 
-// ✅ PORT (Render fix)
+// ✅ PORT FIX (Render)
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
