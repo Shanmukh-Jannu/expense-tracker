@@ -3,10 +3,12 @@ const path = require("path");
 const { Pool } = require("pg");
 
 const app = express();
+
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 🔥 PostgreSQL connection (Render ready)
+// ✅ PostgreSQL connection (Render)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -14,8 +16,13 @@ const pool = new Pool({
   },
 });
 
+// ✅ Connect DB
+pool.connect()
+  .then(() => console.log("✅ PostgreSQL Connected"))
+  .catch(err => console.error("❌ DB Error:", err));
+
 // ✅ Create table automatically
-async function createTable() {
+(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS expenses (
@@ -26,17 +33,11 @@ async function createTable() {
     `);
     console.log("✅ Table ready");
   } catch (err) {
-    console.error("❌ Table error:", err);
+    console.error("❌ Table creation error:", err);
   }
-}
-createTable();
+})();
 
-// ✅ Test DB
-pool.connect()
-  .then(() => console.log("✅ PostgreSQL Connected"))
-  .catch(err => console.error("❌ DB Error:", err));
-
-// 👉 Serve frontend
+// ✅ Serve frontend
 app.use(express.static(path.join(__dirname, "public")));
 
 // ================= ROUTES =================
@@ -44,11 +45,13 @@ app.use(express.static(path.join(__dirname, "public")));
 // 👉 Get all expenses
 app.get("/api/expenses", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM expenses ORDER BY id DESC");
+    const result = await pool.query(
+      "SELECT * FROM expenses ORDER BY id DESC"
+    );
     res.json(result.rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch expenses" });
+    res.status(500).json({ error: "Fetch failed" });
   }
 });
 
@@ -56,6 +59,10 @@ app.get("/api/expenses", async (req, res) => {
 app.post("/api/expenses", async (req, res) => {
   try {
     const { title, amount } = req.body;
+
+    if (!title || !amount) {
+      return res.status(400).json({ error: "Missing data" });
+    }
 
     const result = await pool.query(
       "INSERT INTO expenses (title, amount) VALUES ($1, $2) RETURNING *",
@@ -65,28 +72,32 @@ app.post("/api/expenses", async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to add expense" });
+    res.status(500).json({ error: "Insert failed" });
   }
 });
 
 // 👉 Delete expense
 app.delete("/api/expenses/:id", async (req, res) => {
   try {
-    await pool.query("DELETE FROM expenses WHERE id=$1", [req.params.id]);
-    res.json({ message: "Deleted successfully" });
+    await pool.query(
+      "DELETE FROM expenses WHERE id = $1",
+      [req.params.id]
+    );
+    res.json({ message: "Deleted" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Delete failed" });
   }
 });
 
-// 👉 Fallback route
-app.get("*", (req, res) => {
+// ✅ FIXED fallback route (NO CRASH)
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, "public/index.html"));
 });
 
-// 🔥 PORT FIX FOR RENDER
+// ✅ PORT (Render fix)
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
