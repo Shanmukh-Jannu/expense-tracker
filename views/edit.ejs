@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Edit Expense</title>
+</head>
+<body>
+
+<h2>Edit Expense</h2>
+
+<form method="POST" action="/edit/<%= expense.id %>">
+
+  <input type="text" name="title" value="<%= expense.title %>" required><br><br>
+
+  <input type="number" name="amount" value="<%= expense.amount %>" required><br><br>
+
+  <select name="category">
+    <option <%= expense.category === 'Food' ? 'selected' : '' %>>Food</option>
+    <option <%= expense.category === 'Travel' ? 'selected' : '' %>>Travel</option>
+    <option <%= expense.category === 'Bills' ? 'selected' : '' %>>Bills</option>
+    <option <%= expense.category === 'Investments' ? 'selected' : '' %>>Investments</option>
+    <option <%= expense.category === 'Other' ? 'selected' : '' %>>Other</option>
+  </select><br><br>
+
+  <button type="submit">Update</button>
+
+</form>
+
+</body>
+</html>
