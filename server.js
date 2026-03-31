@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const path = require("path");
 const { Pool } = require("pg");
@@ -8,19 +10,21 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ EJS Setup (IMPORTANT)
+// ✅ EJS Setup
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// ✅ PostgreSQL Connection (Render)
+// ✅ PostgreSQL (WORKS LOCAL + RENDER)
+const isProduction = process.env.NODE_ENV === "production";
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: isProduction
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
-// ✅ DB Connect
+// ✅ Connect DB
 pool.connect()
   .then(() => console.log("✅ PostgreSQL Connected"))
   .catch(err => console.error("❌ DB Error:", err));
@@ -116,7 +120,7 @@ app.delete("/api/expenses/:id", async (req, res) => {
 });
 
 
-// ✅ PORT FIX (Render)
+// ✅ PORT (Render Fix)
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
