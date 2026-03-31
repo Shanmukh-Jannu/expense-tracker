@@ -10,18 +10,16 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ EJS Setup
+// ✅ EJS setup
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// ✅ PostgreSQL (WORKS LOCAL + RENDER)
+// ✅ PostgreSQL (Render + Local Fix)
 const isProduction = process.env.NODE_ENV === "production";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: isProduction
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
 // ✅ Connect DB
@@ -48,50 +46,58 @@ pool.connect()
 
 // ================= ROUTES =================
 
-// 👉 Home
+// 👉 Root fix
 app.get("/", (req, res) => {
   res.redirect("/login");
 });
 
-// 👉 Login Page
-app.get("/login", (req, res) => {
-  res.render("login");
+// 👉 Pages
+app.get("/login", (req, res) => res.render("login"));
+app.get("/register", (req, res) => res.render("register"));
+app.get("/dashboard", (req, res) => res.render("dashboard"));
+
+
+// ================= AUTH =================
+
+// 👉 LOGIN (FIXED)
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
+
+  if (email && password) {
+    return res.redirect("/dashboard");
+  }
+
+  res.send("Invalid login");
 });
 
-// 👉 Register Page
-app.get("/register", (req, res) => {
-  res.render("register");
-});
+// 👉 REGISTER
+app.post("/register", (req, res) => {
+  const { email, password } = req.body;
 
-// 👉 Dashboard Page
-app.get("/dashboard", (req, res) => {
-  res.render("dashboard");
+  if (email && password) {
+    return res.redirect("/login");
+  }
+
+  res.send("Registration failed");
 });
 
 
 // ================= API =================
 
-// 👉 Get Expenses
+// 👉 Get expenses
 app.get("/api/expenses", async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM expenses ORDER BY id DESC"
-    );
+    const result = await pool.query("SELECT * FROM expenses ORDER BY id DESC");
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Fetch failed" });
   }
 });
 
-// 👉 Add Expense
+// 👉 Add expense
 app.post("/api/expenses", async (req, res) => {
   try {
     const { title, amount } = req.body;
-
-    if (!title || !amount) {
-      return res.status(400).json({ error: "Missing data" });
-    }
 
     const result = await pool.query(
       "INSERT INTO expenses (title, amount) VALUES ($1, $2) RETURNING *",
@@ -100,27 +106,22 @@ app.post("/api/expenses", async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Insert failed" });
   }
 });
 
-// 👉 Delete Expense
+// 👉 Delete expense
 app.delete("/api/expenses/:id", async (req, res) => {
   try {
-    await pool.query(
-      "DELETE FROM expenses WHERE id=$1",
-      [req.params.id]
-    );
+    await pool.query("DELETE FROM expenses WHERE id=$1", [req.params.id]);
     res.json({ message: "Deleted" });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Delete failed" });
   }
 });
 
 
-// ✅ PORT (Render Fix)
+// ✅ PORT FIX (VERY IMPORTANT)
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
