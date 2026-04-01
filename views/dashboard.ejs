@@ -1,66 +1,140 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
-    body { font-family: Arial; background:#f5f6fa; padding:20px; }
-    .box { background:white; padding:20px; border-radius:10px; margin-bottom:20px; }
-    button { padding:8px; }
+    body {
+      background: #0f172a;
+      color: white;
+      font-family: Arial;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    .card {
+      background: #1e293b;
+      padding: 15px;
+      border-radius: 10px;
+      margin-top: 15px;
+    }
+
+    input, select {
+      padding: 8px;
+      margin: 5px;
+      border-radius: 6px;
+      border: none;
+    }
+
+    button {
+      background: #3b82f6;
+      border: none;
+      padding: 8px 12px;
+      color: white;
+      border-radius: 6px;
+    }
+
+    canvas {
+      max-height: 250px;
+    }
+
+    .positive { color: #22c55e; }
+    .negative { color: #ef4444; }
   </style>
 </head>
+
 <body>
 
-<h1>💰 Expense Tracker</h1>
+<div class="container">
+
+<h2>💰 Expense Tracker</h2>
 <a href="/logout">Logout</a>
 
-<div class="box">
+<div class="card">
   <input id="title" placeholder="Title">
   <input id="amount" placeholder="Amount">
   <input id="category" placeholder="Category">
+  <select id="type">
+    <option value="expense">Expense</option>
+    <option value="income">Income</option>
+  </select>
   <button onclick="add()">Add</button>
 </div>
 
-<div class="box">
-  <h3>Total: ₹<span id="total">0</span></h3>
+<div class="card">
+  <h3 id="balance"></h3>
 </div>
 
-<div class="box">
+<div class="card">
   <ul id="list"></ul>
 </div>
 
-<div class="box">
-  <canvas id="chart"></canvas>
+<div class="card">
+  <canvas id="pie"></canvas>
+</div>
+
+<div class="card">
+  <canvas id="bar"></canvas>
+</div>
+
 </div>
 
 <script>
-let dataArr = [];
+let pie, bar;
 
 async function load() {
   const res = await fetch("/api/expenses");
   const data = await res.json();
-  dataArr = data;
+
+  let income = 0, expense = 0;
+  let map = {};
 
   const list = document.getElementById("list");
   list.innerHTML = "";
 
-  let total = 0;
-  let categoryMap = {};
-
   data.forEach(e => {
-    total += e.amount;
+    const li = document.createElement("li");
+    li.innerHTML = `${e.title} ₹${e.amount} (${e.category})
+    <button onclick="del(${e.id})">❌</button>`;
+    list.appendChild(li);
 
-    categoryMap[e.category] = (categoryMap[e.category] || 0) + e.amount;
-
-    list.innerHTML += `
-      <li>${e.title} - ₹${e.amount} (${e.category})
-      <button onclick="del(${e.id})">Delete</button></li>
-    `;
+    if (e.type === "income") income += e.amount;
+    else {
+      expense += e.amount;
+      map[e.category] = (map[e.category] || 0) + e.amount;
+    }
   });
 
-  document.getElementById("total").innerText = total;
+  const bal = income - expense;
+  const el = document.getElementById("balance");
 
-  drawChart(categoryMap);
+  el.innerText = "Balance: ₹" + Math.abs(bal);
+  el.className = bal >= 0 ? "positive" : "negative";
+
+  draw(map, income, expense);
+}
+
+function draw(map, income, expense) {
+
+  if (pie) pie.destroy();
+  if (bar) bar.destroy();
+
+  pie = new Chart(document.getElementById("pie"), {
+    type: "pie",
+    data: { labels: Object.keys(map), datasets: [{ data: Object.values(map) }] }
+  });
+
+  bar = new Chart(document.getElementById("bar"), {
+    type: "bar",
+    data: {
+      labels: ["Income", "Expense"],
+      datasets: [{ data: [income, expense] }]
+    }
+  });
 }
 
 async function add() {
@@ -69,8 +143,9 @@ async function add() {
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify({
       title: title.value,
-      amount: parseInt(amount.value),
-      category: category.value
+      amount: Number(amount.value),
+      category: category.value,
+      type: type.value
     })
   });
   load();
@@ -79,20 +154,6 @@ async function add() {
 async function del(id) {
   await fetch("/api/expenses/" + id, { method: "DELETE" });
   load();
-}
-
-function drawChart(map) {
-  const ctx = document.getElementById("chart");
-
-  new Chart(ctx, {
-    type: "pie",
-    data: {
-      labels: Object.keys(map),
-      datasets: [{
-        data: Object.values(map)
-      }]
-    }
-  });
 }
 
 load();
