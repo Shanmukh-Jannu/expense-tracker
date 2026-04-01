@@ -3,18 +3,26 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const { Pool } = require("pg");
+const bcrypt = require("bcrypt");
+const session = require("express-session");
 
 const app = express();
 
-// ✅ Middleware
+// ================= MIDDLEWARE =================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ EJS setup
+app.use(session({
+  secret: "secret123",
+  resave: false,
+  saveUninitialized: false
+}));
+
+// ================= VIEW ENGINE =================
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// ✅ PostgreSQL (Render + Local Fix)
+// ================= DATABASE =================
 const isProduction = process.env.NODE_ENV === "production";
 
 const pool = new Pool({
@@ -22,108 +30,140 @@ const pool = new Pool({
   ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
-// ✅ Connect DB
+// connect DB
 pool.connect()
   .then(() => console.log("✅ PostgreSQL Connected"))
   .catch(err => console.error("❌ DB Error:", err));
 
-// ✅ Create Table Automatically
+// create tables
 (async () => {
   try {
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS expenses (
+      CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        amount INT NOT NULL
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL
       );
     `);
-    console.log("✅ Table ready");
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id SERIAL PRIMARY KEY,
+        user_id INT,
+        title TEXT,
+        amount INT
+      );
+    `);
+
+    console.log("✅ Tables Ready");
   } catch (err) {
-    console.error("❌ Table error:", err);
+    console.error("❌ Table Error:", err);
   }
 })();
 
+// ================= AUTH MIDDLEWARE =================
+function isLoggedIn(req, res, next) {
+  if (!req.session.userId) {
+    return res.redirect("/login");
+  }
+  next();
+}
 
 // ================= ROUTES =================
 
-// 👉 Root fix
-app.get("/", (req, res) => {
-  res.redirect("/login");
-});
+// Root
+app.get("/", (req, res) => res.redirect("/login"));
 
-// 👉 Pages
+// Pages
 app.get("/login", (req, res) => res.render("login"));
 app.get("/register", (req, res) => res.render("register"));
-app.get("/dashboard", (req, res) => res.render("dashboard"));
-
+app.get("/dashboard", isLoggedIn, (req, res) => res.render("dashboard"));
 
 // ================= AUTH =================
 
-// 👉 LOGIN (FIXED)
-app.post("/login", (req, res) => {
+// Register
+app.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
-  if (email && password) {
-    return res.redirect("/dashboard");
-  }
+  try {
+    const hashed = await bcrypt.hash(password, 10);
 
-  res.send("Invalid login");
+    await pool.query(
+      "INSERT INTO users (email, password) VALUES ($1, $2)",
+      [email, hashed]
+    );
+
+    res.redirect("/login");
+  } catch (err) {
+    res.send("User already exists");
+  }
 });
 
-// 👉 REGISTER
-app.post("/register", (req, res) => {
+// Login
+app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  if (email && password) {
-    return res.redirect("/login");
-  }
+  const result = await pool.query(
+    "SELECT * FROM users WHERE email=$1",
+    [email]
+  );
 
-  res.send("Registration failed");
+  if (result.rows.length === 0) return res.send("User not found");
+
+  const user = result.rows[0];
+
+  const valid = await bcrypt.compare(password, user.password);
+
+  if (!valid) return res.send("Wrong password");
+
+  req.session.userId = user.id;
+
+  res.redirect("/dashboard");
 });
 
+// Logout
+app.get("/logout", (req, res) => {
+  req.session.destroy();
+  res.redirect("/login");
+});
 
 // ================= API =================
 
-// 👉 Get expenses
-app.get("/api/expenses", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM expenses ORDER BY id DESC");
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: "Fetch failed" });
-  }
+// Get expenses
+app.get("/api/expenses", isLoggedIn, async (req, res) => {
+  const result = await pool.query(
+    "SELECT * FROM expenses WHERE user_id=$1 ORDER BY id DESC",
+    [req.session.userId]
+  );
+
+  res.json(result.rows);
 });
 
-// 👉 Add expense
-app.post("/api/expenses", async (req, res) => {
-  try {
-    const { title, amount } = req.body;
+// Add expense
+app.post("/api/expenses", isLoggedIn, async (req, res) => {
+  const { title, amount } = req.body;
 
-    const result = await pool.query(
-      "INSERT INTO expenses (title, amount) VALUES ($1, $2) RETURNING *",
-      [title, amount]
-    );
+  const result = await pool.query(
+    "INSERT INTO expenses (user_id, title, amount) VALUES ($1,$2,$3) RETURNING *",
+    [req.session.userId, title, amount]
+  );
 
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: "Insert failed" });
-  }
+  res.json(result.rows[0]);
 });
 
-// 👉 Delete expense
-app.delete("/api/expenses/:id", async (req, res) => {
-  try {
-    await pool.query("DELETE FROM expenses WHERE id=$1", [req.params.id]);
-    res.json({ message: "Deleted" });
-  } catch (err) {
-    res.status(500).json({ error: "Delete failed" });
-  }
+// Delete expense
+app.delete("/api/expenses/:id", isLoggedIn, async (req, res) => {
+  await pool.query(
+    "DELETE FROM expenses WHERE id=$1 AND user_id=$2",
+    [req.params.id, req.session.userId]
+  );
+
+  res.json({ message: "Deleted" });
 });
 
-
-// ✅ PORT FIX (VERY IMPORTANT)
+// ================= SERVER =================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server running on ${PORT}`);
 });
