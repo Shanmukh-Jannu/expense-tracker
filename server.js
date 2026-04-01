@@ -3,8 +3,8 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const { Pool } = require("pg");
-const bcrypt = require("bcryptjs");
 const session = require("express-session");
+const bcrypt = require("bcrypt");
 
 const app = express();
 
@@ -23,75 +23,83 @@ app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
 // ===== DATABASE =====
+const isProduction = process.env.NODE_ENV === "production";
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
-// connect DB
+// Connect DB
 pool.connect()
   .then(() => console.log("✅ PostgreSQL Connected"))
   .catch(err => console.error("❌ DB Error:", err));
 
-// create tables
+// Create Tables
 (async () => {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL
-      );
-    `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL
+    );
+  `);
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS expenses (
-        id SERIAL PRIMARY KEY,
-        user_id INT,
-        title TEXT,
-        amount INT
-      );
-    `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS expenses (
+      id SERIAL PRIMARY KEY,
+      user_id INT,
+      title TEXT,
+      amount INT
+    );
+  `);
 
-    console.log("✅ Tables Ready");
-  } catch (err) {
-    console.error("❌ Table Error:", err);
-  }
+  console.log("✅ Tables Ready");
 })();
 
-// ===== AUTH CHECK =====
+// ===== AUTH =====
 function isLoggedIn(req, res, next) {
   if (!req.session.userId) return res.redirect("/login");
   next();
 }
 
 // ===== ROUTES =====
+
+// Pages
 app.get("/", (req, res) => res.redirect("/login"));
 
 app.get("/login", (req, res) => res.render("login"));
 app.get("/register", (req, res) => res.render("register"));
-app.get("/dashboard", isLoggedIn, (req, res) => res.render("dashboard"));
 
-// ===== AUTH =====
+app.get("/dashboard", isLoggedIn, async (req, res) => {
+  const result = await pool.query(
+    "SELECT * FROM expenses WHERE user_id=$1 ORDER BY id DESC",
+    [req.session.userId]
+  );
+
+  res.render("dashboard", { expenses: result.rows });
+});
+
+// ===== AUTH APIs =====
+
+// Register
 app.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
+  const hash = await bcrypt.hash(password, 10);
+
   try {
-    const hashed = await bcrypt.hash(password, 10);
-
     await pool.query(
-      "INSERT INTO users (email, password) VALUES ($1, $2)",
-      [email, hashed]
+      "INSERT INTO users (email, password) VALUES ($1,$2)",
+      [email, hash]
     );
-
     res.redirect("/login");
-  } catch (err) {
+  } catch {
     res.send("User already exists");
   }
 });
 
+// Login
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -105,27 +113,23 @@ app.post("/login", async (req, res) => {
   const user = result.rows[0];
 
   const valid = await bcrypt.compare(password, user.password);
+
   if (!valid) return res.send("Wrong password");
 
   req.session.userId = user.id;
+
   res.redirect("/dashboard");
 });
 
+// Logout
 app.get("/logout", (req, res) => {
   req.session.destroy();
   res.redirect("/login");
 });
 
-// ===== API =====
-app.get("/api/expenses", isLoggedIn, async (req, res) => {
-  const result = await pool.query(
-    "SELECT * FROM expenses WHERE user_id=$1 ORDER BY id DESC",
-    [req.session.userId]
-  );
+// ===== EXPENSE APIs =====
 
-  res.json(result.rows);
-});
-
+// Add
 app.post("/api/expenses", isLoggedIn, async (req, res) => {
   const { title, amount } = req.body;
 
@@ -137,13 +141,14 @@ app.post("/api/expenses", isLoggedIn, async (req, res) => {
   res.json(result.rows[0]);
 });
 
-app.delete("/api/expenses/:id", isLoggedIn, async (req, res) => {
+// Delete
+app.post("/delete/:id", isLoggedIn, async (req, res) => {
   await pool.query(
     "DELETE FROM expenses WHERE id=$1 AND user_id=$2",
     [req.params.id, req.session.userId]
   );
 
-  res.json({ message: "Deleted" });
+  res.redirect("/dashboard");
 });
 
 // ===== SERVER =====

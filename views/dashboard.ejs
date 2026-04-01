@@ -1,167 +1,112 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Expense Dashboard</title>
-
-  <!-- Bootstrap -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <title>Dashboard</title>
 
   <style>
     body {
-      background: #f4f6f9;
+      font-family: Arial;
+      background: #f5f6fa;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+    }
+
+    h1 {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     .card {
-      border-radius: 12px;
+      background: white;
+      padding: 20px;
+      margin: 15px 0;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
 
-    .title {
-      font-weight: bold;
-      color: #333;
+    input {
+      padding: 10px;
+      margin: 5px;
+      width: 40%;
+    }
+
+    button {
+      padding: 10px 15px;
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+
+    .delete {
+      background: red;
     }
   </style>
 </head>
 
 <body>
 
-<div class="container mt-5">
+<div class="container">
 
-  <!-- HEADER -->
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="title">💰 Expense Tracker</h2>
-    <a href="/login" class="btn btn-danger">Logout</a>
-  </div>
+  <h1>
+    💰 Expense Tracker
+    <a href="/logout"><button class="delete">Logout</button></a>
+  </h1>
 
-  <!-- ADD EXPENSE -->
-  <div class="card p-4 mb-4 shadow-sm">
-    <h5>Add Expense</h5>
-    <form id="expenseForm" class="row g-3">
-      <div class="col-md-5">
-        <input type="text" id="title" class="form-control" placeholder="Expense Title" required>
-      </div>
-      <div class="col-md-5">
-        <input type="number" id="amount" class="form-control" placeholder="Amount" required>
-      </div>
-      <div class="col-md-2">
-        <button class="btn btn-primary w-100">Add</button>
-      </div>
+  <!-- ADD -->
+  <div class="card">
+    <h3>Add Expense</h3>
+
+    <form id="expenseForm">
+      <input name="title" placeholder="Title" required>
+      <input name="amount" type="number" placeholder="Amount" required>
+      <button>Add</button>
     </form>
   </div>
 
-  <!-- SUMMARY -->
-  <div class="row mb-4">
-    <div class="col-md-4">
-      <div class="card p-3 text-center shadow-sm">
-        <h6>Total Expenses</h6>
-        <h4 id="total">₹0</h4>
-      </div>
-    </div>
-  </div>
+  <!-- LIST -->
+  <div class="card">
+    <h3>Expenses</h3>
 
-  <!-- LIST + CHART -->
-  <div class="row">
+    <% expenses.forEach(e => { %>
+      <p>
+        <b><%= e.title %></b> - ₹<%= e.amount %>
 
-    <!-- LIST -->
-    <div class="col-md-6">
-      <div class="card p-3 shadow-sm">
-        <h5>📋 Expenses</h5>
-        <ul id="list" class="list-group"></ul>
-      </div>
-    </div>
-
-    <!-- CHART -->
-    <div class="col-md-6">
-      <div class="card p-3 shadow-sm">
-        <h5>📊 Analytics</h5>
-        <canvas id="chart"></canvas>
-      </div>
-    </div>
+        <form action="/delete/<%= e.id %>" method="POST" style="display:inline;">
+          <button class="delete">Delete</button>
+        </form>
+      </p>
+    <% }) %>
 
   </div>
 
 </div>
 
 <script>
-let chart;
+const form = document.getElementById("expenseForm");
 
-// Load data
-async function loadExpenses() {
-  const res = await fetch("/api/expenses");
-  const data = await res.json();
-
-  const list = document.getElementById("list");
-  list.innerHTML = "";
-
-  let total = 0;
-  const labels = [];
-  const amounts = [];
-
-  data.forEach(exp => {
-    total += Number(exp.amount);
-
-    const li = document.createElement("li");
-    li.className = "list-group-item d-flex justify-content-between";
-
-    li.innerHTML = `
-      ${exp.title} - ₹${exp.amount}
-      <button class="btn btn-sm btn-danger" onclick="deleteExp(${exp.id})">Delete</button>
-    `;
-
-    list.appendChild(li);
-
-    labels.push(exp.title);
-    amounts.push(exp.amount);
-  });
-
-  document.getElementById("total").innerText = "₹" + total;
-
-  renderChart(labels, amounts);
-}
-
-// Add expense
-document.getElementById("expenseForm").addEventListener("submit", async (e) => {
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  const title = form.title.value;
+  const amount = form.amount.value;
 
   await fetch("/api/expenses", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      title: document.getElementById("title").value,
-      amount: document.getElementById("amount").value
-    })
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ title, amount })
   });
 
-  loadExpenses();
+  location.reload();
 });
-
-// Delete
-async function deleteExp(id) {
-  await fetch(`/api/expenses/${id}`, { method: "DELETE" });
-  loadExpenses();
-}
-
-// Chart
-function renderChart(labels, amounts) {
-  const ctx = document.getElementById("chart");
-
-  if (chart) chart.destroy();
-
-  chart = new Chart(ctx, {
-    type: "pie",
-    data: {
-      labels: labels,
-      datasets: [{
-        data: amounts
-      }]
-    }
-  });
-}
-
-loadExpenses();
 </script>
 
 </body>
