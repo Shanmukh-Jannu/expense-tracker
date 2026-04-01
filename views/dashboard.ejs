@@ -2,111 +2,100 @@
 <html>
 <head>
   <title>Dashboard</title>
-
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: Arial;
-      background: #f5f6fa;
-      padding: 20px;
-    }
-
-    .container {
-      max-width: 900px;
-      margin: auto;
-    }
-
-    h1 {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .card {
-      background: white;
-      padding: 20px;
-      margin: 15px 0;
-      border-radius: 10px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-
-    input {
-      padding: 10px;
-      margin: 5px;
-      width: 40%;
-    }
-
-    button {
-      padding: 10px 15px;
-      background: #007bff;
-      color: white;
-      border: none;
-      cursor: pointer;
-      border-radius: 5px;
-    }
-
-    .delete {
-      background: red;
-    }
+    body { font-family: Arial; background:#f5f6fa; padding:20px; }
+    .box { background:white; padding:20px; border-radius:10px; margin-bottom:20px; }
+    button { padding:8px; }
   </style>
 </head>
-
 <body>
 
-<div class="container">
+<h1>💰 Expense Tracker</h1>
+<a href="/logout">Logout</a>
 
-  <h1>
-    💰 Expense Tracker
-    <a href="/logout"><button class="delete">Logout</button></a>
-  </h1>
+<div class="box">
+  <input id="title" placeholder="Title">
+  <input id="amount" placeholder="Amount">
+  <input id="category" placeholder="Category">
+  <button onclick="add()">Add</button>
+</div>
 
-  <!-- ADD -->
-  <div class="card">
-    <h3>Add Expense</h3>
+<div class="box">
+  <h3>Total: ₹<span id="total">0</span></h3>
+</div>
 
-    <form id="expenseForm">
-      <input name="title" placeholder="Title" required>
-      <input name="amount" type="number" placeholder="Amount" required>
-      <button>Add</button>
-    </form>
-  </div>
+<div class="box">
+  <ul id="list"></ul>
+</div>
 
-  <!-- LIST -->
-  <div class="card">
-    <h3>Expenses</h3>
-
-    <% expenses.forEach(e => { %>
-      <p>
-        <b><%= e.title %></b> - ₹<%= e.amount %>
-
-        <form action="/delete/<%= e.id %>" method="POST" style="display:inline;">
-          <button class="delete">Delete</button>
-        </form>
-      </p>
-    <% }) %>
-
-  </div>
-
+<div class="box">
+  <canvas id="chart"></canvas>
 </div>
 
 <script>
-const form = document.getElementById("expenseForm");
+let dataArr = [];
 
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
+async function load() {
+  const res = await fetch("/api/expenses");
+  const data = await res.json();
+  dataArr = data;
 
-  const title = form.title.value;
-  const amount = form.amount.value;
+  const list = document.getElementById("list");
+  list.innerHTML = "";
 
-  await fetch("/api/expenses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ title, amount })
+  let total = 0;
+  let categoryMap = {};
+
+  data.forEach(e => {
+    total += e.amount;
+
+    categoryMap[e.category] = (categoryMap[e.category] || 0) + e.amount;
+
+    list.innerHTML += `
+      <li>${e.title} - ₹${e.amount} (${e.category})
+      <button onclick="del(${e.id})">Delete</button></li>
+    `;
   });
 
-  location.reload();
-});
+  document.getElementById("total").innerText = total;
+
+  drawChart(categoryMap);
+}
+
+async function add() {
+  await fetch("/api/expenses", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      title: title.value,
+      amount: parseInt(amount.value),
+      category: category.value
+    })
+  });
+  load();
+}
+
+async function del(id) {
+  await fetch("/api/expenses/" + id, { method: "DELETE" });
+  load();
+}
+
+function drawChart(map) {
+  const ctx = document.getElementById("chart");
+
+  new Chart(ctx, {
+    type: "pie",
+    data: {
+      labels: Object.keys(map),
+      datasets: [{
+        data: Object.values(map)
+      }]
+    }
+  });
+}
+
+load();
 </script>
 
 </body>
