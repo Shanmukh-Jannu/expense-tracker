@@ -3,12 +3,12 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const { Pool } = require("pg");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const session = require("express-session");
 
 const app = express();
 
-// ================= MIDDLEWARE =================
+// ===== MIDDLEWARE =====
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -18,16 +18,16 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// ================= VIEW ENGINE =================
+// ===== VIEW ENGINE =====
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// ================= DATABASE =================
-const isProduction = process.env.NODE_ENV === "production";
-
+// ===== DATABASE =====
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: isProduction ? { rejectUnauthorized: false } : false,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 // connect DB
@@ -61,27 +61,20 @@ pool.connect()
   }
 })();
 
-// ================= AUTH MIDDLEWARE =================
+// ===== AUTH CHECK =====
 function isLoggedIn(req, res, next) {
-  if (!req.session.userId) {
-    return res.redirect("/login");
-  }
+  if (!req.session.userId) return res.redirect("/login");
   next();
 }
 
-// ================= ROUTES =================
-
-// Root
+// ===== ROUTES =====
 app.get("/", (req, res) => res.redirect("/login"));
 
-// Pages
 app.get("/login", (req, res) => res.render("login"));
 app.get("/register", (req, res) => res.render("register"));
 app.get("/dashboard", isLoggedIn, (req, res) => res.render("dashboard"));
 
-// ================= AUTH =================
-
-// Register
+// ===== AUTH =====
 app.post("/register", async (req, res) => {
   const { email, password } = req.body;
 
@@ -99,7 +92,6 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// Login
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -113,23 +105,18 @@ app.post("/login", async (req, res) => {
   const user = result.rows[0];
 
   const valid = await bcrypt.compare(password, user.password);
-
   if (!valid) return res.send("Wrong password");
 
   req.session.userId = user.id;
-
   res.redirect("/dashboard");
 });
 
-// Logout
 app.get("/logout", (req, res) => {
   req.session.destroy();
   res.redirect("/login");
 });
 
-// ================= API =================
-
-// Get expenses
+// ===== API =====
 app.get("/api/expenses", isLoggedIn, async (req, res) => {
   const result = await pool.query(
     "SELECT * FROM expenses WHERE user_id=$1 ORDER BY id DESC",
@@ -139,7 +126,6 @@ app.get("/api/expenses", isLoggedIn, async (req, res) => {
   res.json(result.rows);
 });
 
-// Add expense
 app.post("/api/expenses", isLoggedIn, async (req, res) => {
   const { title, amount } = req.body;
 
@@ -151,7 +137,6 @@ app.post("/api/expenses", isLoggedIn, async (req, res) => {
   res.json(result.rows[0]);
 });
 
-// Delete expense
 app.delete("/api/expenses/:id", isLoggedIn, async (req, res) => {
   await pool.query(
     "DELETE FROM expenses WHERE id=$1 AND user_id=$2",
@@ -161,7 +146,7 @@ app.delete("/api/expenses/:id", isLoggedIn, async (req, res) => {
   res.json({ message: "Deleted" });
 });
 
-// ================= SERVER =================
+// ===== SERVER =====
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
